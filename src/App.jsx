@@ -256,7 +256,6 @@ const VirtualJoystick = ({ onMove }) => {
     setKnobPos({ x: kX, y: kY });
 
     const now = Date.now();
-    // 拖曳距離大於 20 且間隔 200ms 才觸發移動，防止走太快
     if (dist > 20 && now - touchRef.current.lastMoveTime > 200) {
       if (Math.abs(dx) > Math.abs(dy)) {
         onMove(dx > 0 ? 1 : -1, 0);
@@ -286,13 +285,10 @@ const VirtualJoystick = ({ onMove }) => {
       style={{ touchAction: 'none' }}
     >
       <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05)_0%,transparent_70%)] pointer-events-none" />
-      {/* 裝飾方向箭頭 */}
       <div className="absolute top-2 text-slate-500/50 pointer-events-none"><ChevronUp size={16}/></div>
       <div className="absolute bottom-2 text-slate-500/50 pointer-events-none"><ChevronDown size={16}/></div>
       <div className="absolute left-2 text-slate-500/50 pointer-events-none"><ChevronLeft size={16}/></div>
       <div className="absolute right-2 text-slate-500/50 pointer-events-none"><ChevronRight size={16}/></div>
-      
-      {/* 搖桿推鈕 */}
       <div 
         className="w-12 h-12 md:w-14 md:h-14 bg-slate-400 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.5),inset_0_4px_4px_rgba(255,255,255,0.4)] pointer-events-none transition-transform duration-75 flex items-center justify-center"
         style={{ transform: `translate(${knobPos.x}px, ${knobPos.y}px)` }}
@@ -333,7 +329,11 @@ export default function App() {
   const [isTreeOpen, setIsTreeOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [isEquipOpen, setIsEquipOpen] = useState(false);
-  const [isStatsDetailsOpen, setIsStatsDetailsOpen] = useState(false); // 控制能力值面板展開
+  const [isStatsDetailsOpen, setIsStatsDetailsOpen] = useState(false);
+  
+  // 裝備面板專用 State
+  const [activeSlot, setActiveSlot] = useState('W');
+  const [viewItemId, setViewItemId] = useState(null);
 
   // 戰鬥公式計算
   const getEquipStats = () => {
@@ -386,9 +386,6 @@ export default function App() {
 
   // --- 系統存取檔 ---
   const handleGenerateSave = () => {
-    // 依據規格: N[Name]-F[Floor]-C[Tier][JobId]-1111110-E[Exp]-W01P0203000000-Ixxxx-X[Checksum]
-    
-    // 名稱 (Base64 URL Safe encoding to handle Chinese/special chars safely)
     const nameEncoded = btoa(encodeURIComponent(playerName)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const nameStr = `N${nameEncoded}`;
     
@@ -404,7 +401,6 @@ export default function App() {
     const baseStr = `${nameStr}-F${floor}-${cStr}-${sStr}-${eStr}-${eqStr}-${invStr}`;
     const code = `${baseStr}-${generateChecksum(baseStr)}`;
     
-    // 直接觸發複製，不顯示 Modal
     const textArea = document.createElement("textarea");
     textArea.value = code;
     textArea.style.position = "fixed";
@@ -457,39 +453,44 @@ export default function App() {
     
     try {
       const parts = rawCode.split('-');
-      // 新版格式: N... - F... - C... - Stats - E... - W/P... - I... - X... (共 8 段)
-      if (parts.length < 8) throw new Error("Format error");
-
-      // Checksum
-      const checkIndex = parts.length - 1;
-      const baseStr = parts.slice(0, checkIndex).join('-');
+      let pNameStr = "", pFloor = "", pClass = "", pStats = "", pExp = "", pEquip = "", pInv = "";
       
-      // 容錯: 雖然有 checksum，但在讀檔介面我們允許一定程度的錯誤 (避免玩家不小心刪掉一兩個字尾)
-      // 若要嚴格限制，可以把此處的判定啟用
-      /*
-      if (generateChecksum(baseStr) !== `X${parts[checkIndex].replace('X', '')}`) {
-         console.warn("Checksum mismatch, attempting to load anyway.");
-      }
-      */
-
-      // Parse Name (N...)
-      let parsedName = "無名吉他手";
+      // 動態判定是新版(N開頭)還是舊版(F開頭)，解決讀取裝備的錯位問題
       if (parts[0].startsWith('N')) {
+         if (parts.length < 8) throw new Error("Format error");
+         pNameStr = parts[0];
+         pFloor = parts[1];
+         pClass = parts[2];
+         pStats = parts[3];
+         pExp = parts[4];
+         pEquip = parts[5];
+         pInv = parts[6];
+      } else if (parts[0].startsWith('F')) {
+         if (parts.length < 7) throw new Error("Format error");
+         pFloor = parts[0];
+         pClass = parts[1];
+         pStats = parts[2];
+         pExp = parts[3];
+         pEquip = parts[4];
+         pInv = parts[5];
+      } else {
+         throw new Error("Unknown format");
+      }
+
+      let parsedName = "無名吉他手";
+      if (pNameStr) {
         try {
-          // Decode Base64 URL Safe
-          let base64Str = parts[0].substring(1).replace(/-/g, '+').replace(/_/g, '/');
+          let base64Str = pNameStr.substring(1).replace(/-/g, '+').replace(/_/g, '/');
           while (base64Str.length % 4) { base64Str += '='; }
           parsedName = decodeURIComponent(atob(base64Str));
         } catch(e) { parsedName = "失憶吉他手"; }
       }
       setPlayerName(parsedName);
 
-      // Parse Floor (F...)
-      const parsedFloor = parseInt(parts[1].substring(1)) || 1;
+      const parsedFloor = parseInt(pFloor.substring(1)) || 1;
       setFloor(parsedFloor);
       
-      // Parse Class (C...)
-      const classStr = parts[2].substring(1); 
+      const classStr = pClass.substring(1); 
       const parsedTier = parseInt(classStr[0]) || 0;
       const parsedJobId = classStr.substring(1) || '0';
       setTier(parsedTier); setJobId(parsedJobId);
@@ -511,25 +512,19 @@ export default function App() {
           if (job && t1Job) { setJobName(job.name); setJobLine(line); setSpecialName(t1Job.specialName); }
       }
       
-      // Parse Stats
-      const s = parts[3];
       setStats({
-        chord: parseInt(s[0], 16) || 1, scale: parseInt(s[1], 16) || 1, theory: parseInt(s[2], 16) || 1,
-        tone: parseInt(s[3], 16) || 1, speed: parseInt(s[4], 16) || 1, rhythm: parseInt(s[5], 16) || 1, special: parseInt(s[6], 16) || 0
+        chord: parseInt(pStats[0], 16) || 1, scale: parseInt(pStats[1], 16) || 1, theory: parseInt(pStats[2], 16) || 1,
+        tone: parseInt(pStats[3], 16) || 1, speed: parseInt(pStats[4], 16) || 1, rhythm: parseInt(pStats[5], 16) || 1, special: parseInt(pStats[6], 16) || 0
       });
       
-      // Parse EXP (E...)
-      setExp(parseInt(parts[4].substring(1)) || 0);
+      setExp(parseInt(pExp.substring(1)) || 0);
       
-      // Parse Equip (W...P...)
-      const eq = parts[5];
       setEquip({
-        W: parseInt(eq.substr(1,2))||null, P1: parseInt(eq.substr(4,2))||null, P2: parseInt(eq.substr(6,2))||null,
-        P3: parseInt(eq.substr(8,2))||null, P4: parseInt(eq.substr(10,2))||null, P5: parseInt(eq.substr(12,2))||null, P6: parseInt(eq.substr(14,2))||null
+        W: parseInt(pEquip.substr(1,2))||null, P1: parseInt(pEquip.substr(4,2))||null, P2: parseInt(pEquip.substr(6,2))||null,
+        P3: parseInt(pEquip.substr(8,2))||null, P4: parseInt(pEquip.substr(10,2))||null, P5: parseInt(pEquip.substr(12,2))||null, P6: parseInt(pEquip.substr(14,2))||null
       });
 
-      // Parse Inventory (I...)
-      setInventory(decodeInventory(parts[6]));
+      setInventory(decodeInventory(pInv));
       
       setIsFloorLocked(false);
       setGameState('PLAYING');
@@ -957,7 +952,7 @@ export default function App() {
                 <button onClick={() => setIsStatsOpen(true)} className="flex-1 flex flex-col items-center justify-center py-1.5 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-500/50 rounded-lg transition-colors text-emerald-300">
                   <ArrowUp size={14} className="mb-0.5" /><span className="text-[9px] font-bold">升級</span>
                 </button>
-                <button onClick={() => setIsEquipOpen(true)} className={`relative flex-1 flex flex-col items-center justify-center py-1.5 border rounded-lg transition-colors ${isFloorLocked ? 'bg-slate-900/80 border-slate-700 text-slate-500 cursor-not-allowed' : 'bg-orange-900/40 hover:bg-orange-800/60 border-orange-500/50 text-orange-300'}`}>
+                <button onClick={() => { setIsEquipOpen(true); setActiveSlot('W'); setViewItemId(equip['W'] || null); }} className={`relative flex-1 flex flex-col items-center justify-center py-1.5 border rounded-lg transition-colors ${isFloorLocked ? 'bg-slate-900/80 border-slate-700 text-slate-500 cursor-not-allowed' : 'bg-orange-900/40 hover:bg-orange-800/60 border-orange-500/50 text-orange-300'}`}>
                   <Briefcase size={14} className="mb-0.5" /><span className="text-[9px] font-bold">背包</span>
                   {isFloorLocked && <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center"><Key size={14} className="text-red-500/80" /></div>}
                 </button>
@@ -1048,78 +1043,128 @@ export default function App() {
           {/* ================= MODALS ================= */}
 
           {isEquipOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
-                <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-800/50">
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Briefcase className="text-orange-400" /> 裝備配置 {isFloorLocked && <span className="text-[10px] text-red-400 bg-red-950 px-2 py-0.5 rounded ml-2 border border-red-800">戰鬥中鎖定，請至下一層更換</span>}
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg h-[85vh] md:h-[80vh] flex flex-col shadow-2xl relative overflow-hidden">
+                {/* Modal Header */}
+                <div className="flex justify-between items-center p-3 border-b border-slate-800 bg-slate-800/50 shrink-0">
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Briefcase className="text-orange-400" size={18}/> 裝備配置 
+                    {isFloorLocked && <span className="text-[9px] text-red-400 bg-red-950 px-1.5 py-0.5 rounded ml-2 border border-red-800">戰鬥中鎖定</span>}
                   </h2>
-                  <button onClick={() => setIsEquipOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1 bg-slate-800 rounded-full hover:bg-slate-700"><X size={20} /></button>
+                  <button onClick={() => setIsEquipOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1 bg-slate-800 rounded-full hover:bg-slate-700"><X size={18} /></button>
                 </div>
                 
-                <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
-                  <div className="w-full lg:w-1/3 bg-slate-950/50 border-b lg:border-b-0 lg:border-r border-slate-800 p-4 overflow-y-auto custom-scrollbar">
-                    <h3 className="text-xs font-bold text-slate-400 mb-3 border-b border-slate-800 pb-1">身上配置 (Signal Chain)</h3>
-                    {['W', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map(slot => {
-                      const itemId = equip[slot];
-                      const item = EQUIP_DB.find(i => i.id === itemId);
-                      const slotNames = { W:'吉他 (Weapon)', P1:'EFX1 (破音)', P2:'EFX2 (失真)', P3:'AMP (音箱)', P4:'MOD (調變)', P5:'DLY (延遲)', P6:'RVB (殘響)' };
-                      return (
-                        <div key={slot} className="mb-3">
-                          <div className="text-[10px] text-slate-500 mb-0.5">{slotNames[slot]}</div>
-                          <div className={`border p-2 rounded-lg text-xs ${item ? `bg-slate-900 border-slate-700` : 'bg-slate-900/30 border-slate-800/50 border-dashed text-slate-600'}`}>
-                            {item ? (
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <div className={`font-bold ${RARITY_COLORS[item.rarity]}`}>{item.name}</div>
-                                  <div className="text-[9px] text-slate-400 mt-1 line-clamp-1">{item.desc}</div>
-                                </div>
-                                {!isFloorLocked && (
-                                  <button onClick={() => setEquip(p => ({...p, [slot]: null}))} className="ml-2 text-slate-500 hover:text-red-400 p-1">卸下</button>
-                                )}
-                              </div>
-                            ) : '空插槽'}
-                          </div>
-                        </div>
-                      );
-                    })}
+                {/* Area A: 目前配置 (Signal Chain) */}
+                <div className="p-3 border-b border-slate-800 bg-slate-950 shrink-0">
+                  <h3 className="text-[10px] font-bold text-slate-500 mb-2">A. 目前配置 (點擊切換部位)</h3>
+                  
+                  {/* 吉他 Weapon */}
+                  <div 
+                    className={`w-full p-2.5 rounded-xl border-2 mb-2 cursor-pointer transition-all flex items-center justify-between ${activeSlot === 'W' ? 'border-indigo-500 bg-indigo-900/30' : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}
+                    onClick={() => { setActiveSlot('W'); setViewItemId(equip['W']); }}
+                  >
+                    <div>
+                       <div className="text-[9px] text-slate-400 mb-0.5">吉他 (Weapon)</div>
+                       {equip['W'] ? <div className={`text-xs font-bold ${RARITY_COLORS[EQUIP_DB.find(i=>i.id===equip['W'])?.rarity]}`}>{EQUIP_DB.find(i=>i.id===equip['W'])?.name}</div> : <div className="text-slate-600 text-xs italic">空插槽</div>}
+                    </div>
+                    {activeSlot === 'W' && <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>}
                   </div>
 
-                  <div className="w-full lg:w-2/3 p-4 overflow-y-auto custom-scrollbar bg-slate-900/20">
-                    <h3 className="text-xs font-bold text-slate-400 mb-3 border-b border-slate-800 pb-1">背包圖鑑 ({inventory.length}/50)</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {inventory.map(id => {
-                        const item = EQUIP_DB.find(i => i.id === id);
-                        if(!item) return null;
-                        const isEquipped = Object.values(equip).includes(id);
+                  {/* 效果器串列 Effects */}
+                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                     {['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map(slot => {
+                        const item = equip[slot] ? EQUIP_DB.find(i=>i.id===equip[slot]) : null;
+                        const slotNames = { P1:'EFX1(破音)', P2:'EFX2(失真)', P3:'AMP(音箱)', P4:'MOD(調變)', P5:'DLY(延遲)', P6:'RVB(殘響)' };
                         return (
-                          <div key={id} className={`p-2 rounded-lg border ${RARITY_BG[item.rarity]} border-slate-700/50 flex flex-col justify-between ${isEquipped ? 'opacity-40 grayscale' : ''}`}>
-                            <div>
-                              <div className="flex justify-between items-start">
-                                <span className={`text-xs font-bold ${RARITY_COLORS[item.rarity]}`}>{item.name}</span>
-                                <span className="text-[9px] bg-black/40 px-1 rounded text-slate-400">{item.type === 'W' ? 'Weapon' : item.type}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-300 mt-1 flex flex-wrap gap-x-2">
-                                {Object.entries(item.stats).map(([k, v]) => <span key={k}>{k.toUpperCase()} +{v}</span>)}
-                              </div>
-                            </div>
-                            <div className="mt-2 text-right">
-                              {isEquipped ? <span className="text-[10px] text-slate-500">已裝備</span> : 
-                                <button 
-                                  onClick={() => { if(!isFloorLocked) setEquip(p => ({...p, [item.type]: id})); }}
-                                  disabled={isFloorLocked}
-                                  className={`text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white ${isFloorLocked ? 'cursor-not-allowed opacity-50' : ''}`}>
-                                  裝備
-                                </button>
-                              }
-                            </div>
+                          <div 
+                            key={slot}
+                            className={`w-[60px] h-[68px] shrink-0 rounded-xl border-2 cursor-pointer transition-all flex flex-col items-center justify-center p-1 text-center relative ${activeSlot === slot ? 'border-orange-500 bg-orange-900/30' : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}
+                            onClick={() => { setActiveSlot(slot); setViewItemId(equip[slot]); }}
+                          >
+                            <div className="text-[8px] text-slate-400 whitespace-nowrap -mt-1 scale-90">{slotNames[slot]}</div>
+                            {item ? <div className={`text-[9px] font-bold line-clamp-2 leading-tight mt-1 ${RARITY_COLORS[item.rarity]}`}>{item.name.split(' ').slice(-2).join(' ')}</div> : <div className="text-[9px] text-slate-700 mt-1 italic">空</div>}
+                            {activeSlot === slot && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]"></div>}
                           </div>
-                        );
-                      })}
-                      {inventory.length === 0 && <div className="text-slate-500 text-sm col-span-2 text-center py-10">背包空空如也，去打怪吧！</div>}
-                    </div>
+                        )
+                     })}
                   </div>
                 </div>
+
+                {/* Area B: 擁有的清單 */}
+                <div className="p-3 bg-slate-900/50 flex-1 overflow-y-auto custom-scrollbar">
+                   <div className="flex justify-between items-center mb-2">
+                     <h3 className="text-[10px] font-bold text-slate-500">B. 擁有的清單</h3>
+                     <span className="text-[9px] text-slate-600 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">部位: {activeSlot === 'W' ? 'Weapon' : activeSlot}</span>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-2">
+                      {inventory.filter(id => EQUIP_DB.find(i => i.id === id)?.type === activeSlot).map(id => {
+                          const item = EQUIP_DB.find(i => i.id === id);
+                          const isEquipped = equip[activeSlot] === id;
+                          const isSelected = viewItemId === id;
+                          return (
+                            <div 
+                              key={id}
+                              onClick={() => setViewItemId(id)}
+                              className={`p-2 rounded-xl border-2 cursor-pointer transition-all relative flex flex-col justify-between min-h-[60px] ${isSelected ? 'border-blue-400 bg-blue-900/20 scale-[1.02] shadow-lg z-10' : `border-slate-700/50 ${RARITY_BG[item.rarity]} hover:brightness-110`} ${isEquipped ? 'opacity-60 grayscale' : ''}`}
+                            >
+                              {isEquipped && <div className="absolute top-0 right-0 bg-slate-700 text-slate-300 text-[8px] px-1.5 py-0.5 rounded-bl-lg rounded-tr-lg">已裝備</div>}
+                              <div className={`text-[10px] font-bold ${RARITY_COLORS[item.rarity]} line-clamp-2 leading-tight pr-5`}>{item.name}</div>
+                              <div className="text-[9px] text-slate-300 mt-1 flex flex-wrap gap-1 font-mono">
+                                {Object.entries(item.stats).map(([k, v]) => <span key={k} className="bg-black/30 px-1 rounded">{k.toUpperCase()}+{v}</span>)}
+                              </div>
+                            </div>
+                          )
+                      })}
+                      {inventory.filter(id => EQUIP_DB.find(i => i.id === id)?.type === activeSlot).length === 0 && (
+                          <div className="col-span-2 text-slate-600 text-xs text-center py-8 border-2 border-dashed border-slate-800 rounded-xl">背包裡沒有這個部位的裝備。</div>
+                      )}
+                   </div>
+                </div>
+
+                {/* Area C: 說明與操作 */}
+                <div className="p-3 border-t border-slate-800 bg-slate-950 shrink-0 min-h-[110px] flex items-center shadow-[0_-10px_15px_rgba(0,0,0,0.3)] z-20">
+                  {viewItemId ? (() => {
+                    const vItem = EQUIP_DB.find(i=>i.id===viewItemId);
+                    const isEquipped = equip[activeSlot] === viewItemId;
+                    return (
+                      <div className="flex gap-3 w-full items-stretch">
+                        <div className="flex-1 flex flex-col justify-center min-w-0">
+                           <h4 className={`text-xs font-bold truncate ${RARITY_COLORS[vItem.rarity]}`}>{vItem.name}</h4>
+                           <p className="text-[9px] text-slate-400 mt-1 line-clamp-2 leading-tight">{vItem.desc}</p>
+                           <div className="text-[10px] text-emerald-400 mt-1 font-mono flex flex-wrap gap-x-2">
+                              {Object.entries(vItem.stats).map(([k, v]) => <span key={k}>{k.toUpperCase()} <span className="font-bold">+{v}</span></span>)}
+                           </div>
+                        </div>
+                        <div className="flex items-center justify-center shrink-0 w-[70px]">
+                           {isEquipped ? (
+                             <button 
+                               onClick={() => { if(!isFloorLocked) { setEquip(p => ({...p, [activeSlot]: null})); setViewItemId(null); } }}
+                               disabled={isFloorLocked}
+                               className={`w-full h-full rounded-xl font-bold text-xs transition-all ${isFloorLocked ? 'bg-slate-800 text-slate-600' : 'bg-red-900/60 hover:bg-red-800 text-red-300 border border-red-700/50 active:scale-95'}`}
+                             >
+                               卸下
+                             </button>
+                           ) : (
+                             <button 
+                               onClick={() => { if(!isFloorLocked) setEquip(p => ({...p, [activeSlot]: viewItemId})); }}
+                               disabled={isFloorLocked}
+                               className={`w-full h-full rounded-xl font-bold text-xs transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] ${isFloorLocked ? 'bg-slate-800 text-slate-600' : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-95'}`}
+                             >
+                               裝備
+                             </button>
+                           )}
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-600">
+                      <span className="text-xs mb-1">請在上方選擇裝備</span>
+                      <span className="text-[9px] opacity-70">這裡會顯示詳細數值與按鈕</span>
+                    </div>
+                  )}
+                </div>
+
               </div>
             </div>
           )}
@@ -1199,7 +1244,6 @@ export default function App() {
             </div>
           )}
 
-          {/* --- 技能樹 Modal (簡化顯示) --- */}
           {isTreeOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
