@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* 你的自定義底色 */
+body {
+  margin: 0;
+  background-color: #020617;
+  color: #f8fafc;
+}
