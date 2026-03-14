@@ -304,6 +304,32 @@ const VirtualJoystick = ({ onMove }) => {
 // 3. 主應用程式
 // ==========================================
 export default function App() {
+  // 阻止整個網頁預設的觸控滑動行為，增強搖桿體驗
+  useEffect(() => {
+    const preventDefault = (e) => e.preventDefault();
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+    document.body.style.userSelect = 'none'; // 禁止選取文字
+    document.body.style.webkitUserSelect = 'none';
+    
+    // 只在非 input 元素上阻止 touchmove 預設行為
+    const handleTouchMove = (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+      }
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+      document.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, []);
+
   const [gameState, setGameState] = useState('MENU'); 
   const [playerNameInput, setPlayerNameInput] = useState('');
   const [loadCodeInput, setLoadCodeInput] = useState('');
@@ -856,7 +882,7 @@ export default function App() {
   return (
     <>
       {gameState !== 'PLAYING' && (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-300 font-sans relative overflow-hidden">
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-300 font-sans relative overflow-hidden select-none">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-900/10 rounded-full blur-[120px] pointer-events-none" />
           
           {gameState === 'MENU' && (
@@ -879,7 +905,7 @@ export default function App() {
           {gameState === 'NEW_GAME' && (
             <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 max-w-md w-full text-center shadow-2xl z-10">
               <h2 className="text-2xl font-bold text-white mb-6">創建吉他手</h2>
-              <input type="text" placeholder="輸入姓名 (密技 IALL 全解鎖)" value={playerNameInput} onChange={(e) => setPlayerNameInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3.5 text-white mb-8 focus:outline-none focus:border-indigo-500 text-center font-bold" maxLength={15} />
+              <input type="text" placeholder="輸入姓名 (密技 IALL 全解鎖)" value={playerNameInput} onChange={(e) => setPlayerNameInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3.5 text-white mb-8 focus:outline-none focus:border-indigo-500 text-center font-bold select-auto" maxLength={15} />
               <div className="flex gap-3 justify-center">
                 <button onClick={() => setGameState('MENU')} className="px-5 py-2.5 bg-slate-800 text-slate-400 rounded-lg hover:bg-slate-700 transition-colors">返回</button>
                 <button onClick={handleStartNewGame} className="px-8 py-2.5 bg-indigo-600 text-white font-bold rounded-lg shadow-[0_0_15px_rgba(79,70,229,0.4)] hover:bg-indigo-500 transition-colors">進入地牢</button>
@@ -890,8 +916,8 @@ export default function App() {
           {gameState === 'LOAD_GAME' && (
             <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 max-w-lg w-full text-center shadow-2xl z-10">
               <h2 className="text-2xl font-bold text-white mb-2">讀取字串存檔</h2>
-              <p className="text-xs text-slate-400 mb-6">請貼上包含 7 個區塊的完整代碼</p>
-              <textarea value={loadCodeInput} onChange={(e) => setLoadCodeInput(e.target.value)} className="w-full h-32 bg-slate-950 border border-slate-700 rounded-lg p-3 text-emerald-400 font-mono text-xs mb-6 focus:outline-none focus:border-emerald-500 custom-scrollbar break-all" placeholder="範例: F12-CA1-123456-E0135-W01P...-I...-X00" />
+              <p className="text-xs text-slate-400 mb-6">請貼上包含 7 或 8 個區塊的完整代碼</p>
+              <textarea value={loadCodeInput} onChange={(e) => setLoadCodeInput(e.target.value)} className="w-full h-32 bg-slate-950 border border-slate-700 rounded-lg p-3 text-emerald-400 font-mono text-xs mb-6 focus:outline-none focus:border-emerald-500 custom-scrollbar break-all select-auto" placeholder="範例: F12-CA1-123456-E0135-W01P...-I...-X00" />
               <div className="flex gap-3 justify-center">
                 <button onClick={() => setGameState('MENU')} className="px-5 py-2.5 bg-slate-800 text-slate-400 rounded-lg hover:bg-slate-700 transition-colors">返回</button>
                 <button onClick={handleLoadGame} className="px-8 py-2.5 bg-yellow-600 text-white font-bold rounded-lg shadow-[0_0_15px_rgba(202,138,4,0.4)] hover:bg-yellow-500 transition-colors">強制覆寫進度</button>
@@ -902,12 +928,12 @@ export default function App() {
       )}
 
       {gameState === 'PLAYING' && (
-        <div className="min-h-screen bg-slate-950 text-slate-300 font-sans p-2 md:p-6 flex flex-col items-center">
+        <div className="min-h-screen bg-slate-950 text-slate-300 font-sans p-2 md:p-6 flex flex-col items-center select-none fixed inset-0 overflow-hidden touch-none" style={{ overscrollBehavior: 'none' }}>
           
-          <div className="w-full max-w-md md:max-w-2xl flex flex-col gap-3 mx-auto pb-10">
+          <div className="w-full max-w-md md:max-w-2xl flex flex-col gap-3 mx-auto pb-10 h-full">
             
             {/* --- 新版收合式狀態列 (Header) --- */}
-            <div className="bg-slate-900 border border-slate-700 p-3 md:p-4 rounded-xl shadow-xl relative overflow-hidden flex flex-col gap-3">
+            <div className="bg-slate-900 border border-slate-700 p-3 md:p-4 rounded-xl shadow-xl relative overflow-hidden flex flex-col gap-3 shrink-0">
               <div className="flex items-center gap-4">
                 <button onClick={() => setIsStatsDetailsOpen(!isStatsDetailsOpen)} className="relative hover:scale-105 transition-transform cursor-pointer focus:outline-none flex-shrink-0">
                   <PaperDoll tier={tier} line={jobLine} />
@@ -966,8 +992,8 @@ export default function App() {
             </div>
 
             {/* --- 地圖 --- */}
-            <div className="w-full flex flex-col items-center relative">
-              <div className="bg-slate-900 border-2 border-slate-700 rounded-xl p-1 md:p-2 shadow-2xl relative w-full aspect-square md:aspect-[4/3] overflow-hidden select-none">
+            <div className="w-full flex flex-col items-center relative flex-1 min-h-0">
+              <div className="bg-slate-900 border-2 border-slate-700 rounded-xl p-1 md:p-2 shadow-2xl relative w-full h-full max-h-[50vh] overflow-hidden select-none">
                 <div className="absolute inset-1 md:inset-2 bg-slate-950 overflow-hidden rounded border border-slate-800 shadow-inner"
                   style={{ display: 'grid', gridTemplateColumns: `repeat(${MAP_W}, 1fr)`, gridTemplateRows: `repeat(${MAP_H}, 1fr)` }}>
                   {mapData.map((row, y) => row.map((tile, x) => {
@@ -1023,7 +1049,7 @@ export default function App() {
             </div>
 
             {/* --- 戰鬥日誌 (移到地圖下方) --- */}
-            <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md min-h-[90px]">
+            <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md min-h-[90px] shrink-0 overflow-y-auto custom-scrollbar">
               <div className="flex flex-col gap-1 font-mono text-[10px] md:text-xs">
                 {logs.slice(0, 4).map((log, i) => {
                   let colorClass = 'text-slate-400';
